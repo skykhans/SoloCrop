@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { MediaAsset } from '../../types/media'
 import type { TimelineItem } from '../../types/editor'
 import { normalizeStickerStyle } from '../../features/editor/stickerLibrary'
@@ -18,6 +18,7 @@ const emit = defineEmits<{
 }>()
 
 const videoRef = ref<HTMLVideoElement | null>(null)
+const currentObjectUrl = ref<string | null>(null)
 const currentMedia = computed(() => {
   const active = props.mediaItems.find((item) => props.playheadMs >= item.startMs && props.playheadMs < item.endMs)
   if (!active?.mediaId) {
@@ -59,13 +60,19 @@ const activeStickers = computed(() =>
 )
 
 watch(
-  currentMedia,
-  (value) => {
+  () => `${currentMedia.value?.item.id ?? ''}:${currentMedia.value?.media.id ?? ''}`,
+  () => {
+    const value = currentMedia.value
     const video = videoRef.value
     if (!video || !value) {
       return
     }
-    video.src = URL.createObjectURL(value.media.file)
+    if (currentObjectUrl.value) {
+      URL.revokeObjectURL(currentObjectUrl.value)
+      currentObjectUrl.value = null
+    }
+    currentObjectUrl.value = URL.createObjectURL(value.media.file)
+    video.src = currentObjectUrl.value
     video.currentTime = value.item.sourceInMs / 1000
   },
   { immediate: true }
@@ -114,6 +121,13 @@ function onTimeUpdate() {
   const globalMs = active.item.startMs + Math.floor((video.currentTime * 1000) - active.item.sourceInMs)
   emit('timeupdate', Math.max(active.item.startMs, globalMs))
 }
+
+onBeforeUnmount(() => {
+  if (currentObjectUrl.value) {
+    URL.revokeObjectURL(currentObjectUrl.value)
+    currentObjectUrl.value = null
+  }
+})
 </script>
 
 <template>

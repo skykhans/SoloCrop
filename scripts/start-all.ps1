@@ -37,14 +37,14 @@ if (Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue) {
   $pids = $pids | Select-Object -Unique
 }
 
-foreach ($pid in $pids) {
+foreach ($procId in $pids) {
   try {
-    Stop-Process -Id $pid -Force -ErrorAction Stop
-    Write-Host "Stopped process on port $port: PID $pid"
+    Stop-Process -Id $procId -Force -ErrorAction Stop
+    Write-Host "Stopped process on port ${port}: PID $procId"
   } catch {
-    Write-Host "Failed to stop PID $pid on port $port: $($_.Exception.Message)"
+    Write-Host "Failed to stop PID $procId on port ${port}: $($_.Exception.Message)"
     }
   }
 
 Write-Host "Starting Vite on http://127.0.0.1:$port (strictPort + force)..."
-npm run dev -- --host 127.0.0.1 --port $port --strictPort --force
+npx vite --host 0.0.0.0 --port $port --strictPort --force

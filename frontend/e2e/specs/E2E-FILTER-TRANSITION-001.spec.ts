@@ -8,6 +8,7 @@ test('E2E-FILTER-TRANSITION-001 滤镜与转场可配置', async ({ page }) => {
 
   const videoRow = page.locator('.timeline-track-row').filter({ hasText: '视频轨' })
   await videoRow.locator('.timeline-item').first().click()
+  await page.getByRole('tab', { name: '滤镜与转场（首版）' }).click()
   await expect(page.getByText('滤镜与转场（首版）')).toBeVisible()
 
   await page.locator('.el-form-item').filter({ hasText: '亮度' }).locator('.el-slider').click()

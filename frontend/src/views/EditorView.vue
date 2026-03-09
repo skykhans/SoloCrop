@@ -20,8 +20,9 @@ import { loadExportQueue, saveExportQueue, type ExportQueueRecord, type ExportTa
 import { FILTER_PRESETS } from '../features/editor/filterPresets'
 import { STICKER_LIBRARY } from '../features/editor/stickerLibrary'
 import { downloadBatch } from '../features/split/download'
+import { deleteCustomTemplate, loadCustomTemplates, saveCustomTemplate } from '../features/template/customTemplateStorage'
 import { resolveTemplatePreset, TEMPLATE_PRESETS } from '../features/template/templateLibrary'
-import type { ExportBitratePreset, ExportMode, ExportPreset, StickerVariant, TimelineClip } from '../types/editor'
+import type { ExportBitratePreset, ExportMode, ExportPreset, StickerVariant, TemplatePreset, TimelineClip } from '../types/editor'
 
 interface ExportTaskItem {
   id: string
@@ -51,12 +52,15 @@ const timelineStore = useTimelineStore()
 const subtitleStore = useSubtitleStore()
 
 const activeTab = ref('timeline')
+const activeToolTab = ref('template')
 const selectedMediaId = ref('')
 const pxPerSecond = computed(() => 80 * timelineStore.zoom)
 const autoRetryEnabled = ref(true)
 const maxAutoRetries = ref(2)
 const subtitleOffsetSec = ref(0)
 const selectedTemplateId = ref(TEMPLATE_PRESETS[0]?.id ?? '')
+const customTemplateName = ref('')
+const customTemplates = ref<TemplatePreset[]>([])
 
 const exportQueue = ref<ExportTaskItem[]>([])
 const processingQueue = ref(false)
@@ -74,6 +78,7 @@ onMounted(async () => {
     tasks.unshift(mediaStore.load())
   }
   await Promise.all(tasks)
+  customTemplates.value = loadCustomTemplates()
   const records = loadExportQueue()
   if (records.length) {
     exportQueue.value = records.map((item) => ({ ...item }))
@@ -89,6 +94,10 @@ onMounted(async () => {
     }
   }
 })
+
+const templateOptions = computed(() => [...TEMPLATE_PRESETS, ...customTemplates.value])
+const selectedTemplate = computed(() => templateOptions.value.find((item) => item.id === selectedTemplateId.value) ?? resolveTemplatePreset(selectedTemplateId.value))
+const selectedTemplateIsCustom = computed(() => selectedTemplate.value?.source === 'custom')
 
 watch(
   exportQueue,
@@ -126,6 +135,21 @@ watch([autoRetryEnabled, maxAutoRetries], ([enabled, retries]) => {
   )
 })
 
+
+watch(
+  templateOptions,
+  (options) => {
+    if (!options.length) {
+      selectedTemplateId.value = ''
+      return
+    }
+    if (!options.some((item) => item.id === selectedTemplateId.value)) {
+      selectedTemplateId.value = options[0].id
+    }
+  },
+  { immediate: true }
+)
+
 const selectedMedia = computed(() => mediaStore.items.find((item) => item.id === selectedMediaId.value) ?? null)
 const editorReady = computed(() => !mediaStore.loading && !timelineStore.loading)
 const previewVideoItems = computed(() => timelineStore.videoItems)
@@ -145,7 +169,6 @@ const selectedStickerStyle = computed(
       borderColor: '#ffffff'
     }
 )
-const selectedTemplate = computed(() => resolveTemplatePreset(selectedTemplateId.value))
 const stickerVariantOptions: Array<{ value: StickerVariant; label: string }> = [
   { value: 'text', label: '纯文本' },
   { value: 'pill', label: '胶囊' },
@@ -493,17 +516,41 @@ function updateStickerStyle(field: 'variant' | 'bgColor' | 'textColor' | 'border
   }
 }
 
+function saveCurrentAsTemplate() {
+  try {
+    const templateName = customTemplateName.value.trim()
+    const template = timelineStore.captureTemplatePreset(templateName, `Saved from project ${projectId.value}`)
+    customTemplates.value = saveCustomTemplate(template)
+    selectedTemplateId.value = template.id
+    customTemplateName.value = ''
+    ElMessage.success(`Custom template saved: ${template.name}`)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : 'Saving template failed')
+  }
+}
+
+function removeSelectedCustomTemplate() {
+  const template = selectedTemplate.value
+  if (!template || template.source !== 'custom') {
+    ElMessage.warning('Select a custom template first')
+    return
+  }
+  customTemplates.value = deleteCustomTemplate(template.id)
+  selectedTemplateId.value = templateOptions.value[0]?.id ?? TEMPLATE_PRESETS[0]?.id ?? ''
+  ElMessage.success(`Custom template removed: ${template.name}`)
+}
+
 function applyTemplate() {
   const template = selectedTemplate.value
   if (!template) {
-    ElMessage.error('模板不存在')
+    ElMessage.error('Template not found')
     return
   }
   try {
     timelineStore.applyTemplatePreset(template)
-    ElMessage.success(`已应用模板：${template.name}`)
+    ElMessage.success(`Template applied: ${template.name}`)
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '应用模板失败')
+    ElMessage.error(error instanceof Error ? error.message : 'Applying template failed')
   }
 }
 </script>
@@ -575,217 +622,233 @@ function applyTemplate() {
           </div>
 
           <div class="editor-tool-panel" style="margin-top: 10px">
-            <div class="export-queue-head">
-              <strong>模板系统（首版）</strong>
-              <el-button type="primary" plain @click="applyTemplate">应用模板</el-button>
-            </div>
-            <p style="margin: 0 0 10px; color: #5a6473; font-size: 12px">
-              选择模板后可一次性应用滤镜、转场、示例贴纸和字幕到当前时间轴。
-            </p>
-            <el-select v-model="selectedTemplateId" style="width: 320px; margin-bottom: 10px">
-              <el-option
-                v-for="item in TEMPLATE_PRESETS"
-                :key="item.id"
-                :label="item.name"
-                :value="item.id"
-              />
-            </el-select>
-            <el-alert
-              v-if="selectedTemplate"
-              :title="selectedTemplate.description"
-              type="info"
-              :closable="false"
-              show-icon
-            />
-          </div>
-
-          <div class="editor-tool-panel" style="margin-top: 10px">
-            <div class="export-queue-head">
-              <strong>滤镜与转场（首版）</strong>
-              <el-button text @click="resetVideoEffects" :disabled="!selectedVideoItem">重置</el-button>
-            </div>
-            <p style="margin: 0 0 10px; color: #5a6473; font-size: 12px">
-              选中视频轨片段后可调节亮度/对比度/饱和度与淡入淡出时长，导出成片时生效。
-            </p>
-            <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px">
-              <el-button
-                v-for="preset in FILTER_PRESETS"
-                :key="preset.id"
-                size="small"
-                :disabled="!selectedVideoItem"
-                @click="applyFilterPreset(preset.id)"
-              >
-                {{ preset.name }}
-              </el-button>
-            </div>
-            <el-form label-width="120px" size="small">
-              <el-form-item label="亮度">
-                <el-slider
-                  :model-value="selectedVisualAdjust.brightness"
-                  :min="-1"
-                  :max="1"
-                  :step="0.01"
-                  :disabled="!selectedVideoItem"
-                  style="max-width: 420px"
-                  @input="(value) => updateVideoAdjust('brightness', Number(value))"
-                />
-              </el-form-item>
-              <el-form-item label="对比度">
-                <el-slider
-                  :model-value="selectedVisualAdjust.contrast"
-                  :min="0.5"
-                  :max="2"
-                  :step="0.01"
-                  :disabled="!selectedVideoItem"
-                  style="max-width: 420px"
-                  @input="(value) => updateVideoAdjust('contrast', Number(value))"
-                />
-              </el-form-item>
-              <el-form-item label="饱和度">
-                <el-slider
-                  :model-value="selectedVisualAdjust.saturation"
-                  :min="0"
-                  :max="3"
-                  :step="0.01"
-                  :disabled="!selectedVideoItem"
-                  style="max-width: 420px"
-                  @input="(value) => updateVideoAdjust('saturation', Number(value))"
-                />
-              </el-form-item>
-              <el-form-item label="淡入(s)">
-                <el-input-number
-                  :model-value="selectedTransition.fadeInMs / 1000"
-                  :min="0"
-                  :max="5"
-                  :step="0.1"
-                  :disabled="!selectedVideoItem"
-                  @change="(value) => updateVideoTransition('fadeInMs', Number(value ?? 0))"
-                />
-              </el-form-item>
-              <el-form-item label="淡出(s)">
-                <el-input-number
-                  :model-value="selectedTransition.fadeOutMs / 1000"
-                  :min="0"
-                  :max="5"
-                  :step="0.1"
-                  :disabled="!selectedVideoItem"
-                  @change="(value) => updateVideoTransition('fadeOutMs', Number(value ?? 0))"
-                />
-              </el-form-item>
-              <el-form-item label="跨片段转场">
-                <el-button size="small" :disabled="!selectedVideoItem" @click="applyTransitionToAllVideos">应用当前淡入淡出到全部视频</el-button>
-              </el-form-item>
-            </el-form>
-          </div>
-
-          <div class="editor-tool-panel" style="margin-top: 10px">
-            <div class="export-queue-head">
-              <strong>贴纸素材库（首版）</strong>
-            </div>
-            <p style="margin: 0 0 10px; color: #5a6473; font-size: 12px">
-              支持文本贴纸与图形贴纸样式（胶囊/角标/爆点），可单独配置颜色与位置。
-            </p>
-            <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px">
-              <el-button @click="addStickerPreset('like-pill')">LIKE</el-button>
-              <el-button @click="addStickerPreset('wow-burst')">WOW</el-button>
-              <el-button @click="addStickerPreset('new-badge')">NEW</el-button>
-              <el-button @click="addStickerPreset('sale-pill')">SALE</el-button>
-              <el-button plain @click="addSticker('STICKER')">纯文本</el-button>
-            </div>
-            <el-form label-width="120px" size="small">
-              <el-form-item label="贴纸文本">
-                <el-input
-                  :model-value="selectedStickerText"
-                  maxlength="24"
-                  show-word-limit
-                  placeholder="选中贴纸后可编辑"
-                  :disabled="!selectedStickerItem"
-                  style="max-width: 320px"
-                  @input="(value) => updateStickerText(String(value))"
-                />
-              </el-form-item>
-              <el-form-item label="样式">
-                <el-select
-                  :model-value="selectedStickerStyle.variant"
-                  placeholder="选择样式"
-                  :disabled="!selectedStickerItem"
-                  style="max-width: 220px"
-                  @change="(value) => updateStickerStyle('variant', String(value))"
-                >
+            <el-tabs v-model="activeToolTab">
+              <el-tab-pane label="模板系统（首版）" name="template">
+                <div class="export-queue-head">
+                  <strong>模板系统（首版）</strong>
+                  <div style="display: flex; gap: 8px; flex-wrap: wrap">
+                    <el-button type="primary" plain @click="applyTemplate">应用模板</el-button>
+                    <el-button plain @click="removeSelectedCustomTemplate" :disabled="!selectedTemplateIsCustom">删除自定义模板</el-button>
+                  </div>
+                </div>
+                <p style="margin: 0 0 10px; color: #5a6473; font-size: 12px">
+                  选择模板后可一次性应用滤镜、转场、示例贴纸和字幕到当前时间轴，并支持把当前时间轴保存为本地自定义模板。
+                </p>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px">
+                  <el-input
+                    v-model="customTemplateName"
+                    maxlength="24"
+                    placeholder="输入名称后保存当前时间轴为模板"
+                    style="max-width: 320px"
+                  />
+                  <el-button plain @click="saveCurrentAsTemplate">保存当前为模板</el-button>
+                </div>
+                <el-select v-model="selectedTemplateId" style="width: 360px; margin-bottom: 10px">
                   <el-option
-                    v-for="item in stickerVariantOptions"
-                    :key="item.value"
-                    :label="item.label"
-                    :value="item.value"
+                    v-for="item in templateOptions"
+                    :key="item.id"
+                    :label="item.source === 'custom' ? `${item.name} (Custom)` : item.name"
+                    :value="item.id"
                   />
                 </el-select>
-              </el-form-item>
-              <el-form-item label="背景色">
-                <el-color-picker
-                  :model-value="selectedStickerStyle.bgColor"
-                  :disabled="!selectedStickerItem"
-                  @change="(value) => updateStickerStyle('bgColor', String(value || '#ff4d4f'))"
+                <el-alert
+                  v-if="selectedTemplate"
+                  :title="selectedTemplate.description"
+                  type="info"
+                  :closable="false"
+                  show-icon
                 />
-              </el-form-item>
-              <el-form-item label="文字色">
-                <el-color-picker
-                  :model-value="selectedStickerStyle.textColor"
-                  :disabled="!selectedStickerItem"
-                  @change="(value) => updateStickerStyle('textColor', String(value || '#ffffff'))"
-                />
-              </el-form-item>
-              <el-form-item label="描边色">
-                <el-color-picker
-                  :model-value="selectedStickerStyle.borderColor"
-                  :disabled="!selectedStickerItem"
-                  @change="(value) => updateStickerStyle('borderColor', String(value || '#ffffff'))"
-                />
-              </el-form-item>
-              <el-form-item label="横向位置">
-                <el-slider
-                  :model-value="selectedStickerAdjust.xPct"
-                  :min="0"
-                  :max="1"
-                  :step="0.01"
-                  :disabled="!selectedStickerItem"
-                  style="max-width: 420px"
-                  @input="(value) => updateStickerAdjust('xPct', Number(value))"
-                />
-              </el-form-item>
-              <el-form-item label="纵向位置">
-                <el-slider
-                  :model-value="selectedStickerAdjust.yPct"
-                  :min="0"
-                  :max="1"
-                  :step="0.01"
-                  :disabled="!selectedStickerItem"
-                  style="max-width: 420px"
-                  @input="(value) => updateStickerAdjust('yPct', Number(value))"
-                />
-              </el-form-item>
-              <el-form-item label="缩放">
-                <el-slider
-                  :model-value="selectedStickerAdjust.scale"
-                  :min="0.5"
-                  :max="3"
-                  :step="0.01"
-                  :disabled="!selectedStickerItem"
-                  style="max-width: 420px"
-                  @input="(value) => updateStickerAdjust('scale', Number(value))"
-                />
-              </el-form-item>
-              <el-form-item label="透明度">
-                <el-slider
-                  :model-value="selectedStickerAdjust.opacity"
-                  :min="0.1"
-                  :max="1"
-                  :step="0.01"
-                  :disabled="!selectedStickerItem"
-                  style="max-width: 420px"
-                  @input="(value) => updateStickerAdjust('opacity', Number(value))"
-                />
-              </el-form-item>
-            </el-form>
+              </el-tab-pane>
+
+              <el-tab-pane label="滤镜与转场（首版）" name="filter">
+                <div class="export-queue-head">
+                  <strong>滤镜与转场（首版）</strong>
+                  <el-button text @click="resetVideoEffects" :disabled="!selectedVideoItem">重置</el-button>
+                </div>
+                <p style="margin: 0 0 10px; color: #5a6473; font-size: 12px">
+                  选中视频轨片段后可调节亮度/对比度/饱和度与淡入淡出时长，导出成片时生效。
+                </p>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px">
+                  <el-button
+                    v-for="preset in FILTER_PRESETS"
+                    :key="preset.id"
+                    size="small"
+                    :disabled="!selectedVideoItem"
+                    @click="applyFilterPreset(preset.id)"
+                  >
+                    {{ preset.name }}
+                  </el-button>
+                </div>
+                <el-form label-width="120px" size="small">
+                  <el-form-item label="亮度">
+                    <el-slider
+                      :model-value="selectedVisualAdjust.brightness"
+                      :min="-1"
+                      :max="1"
+                      :step="0.01"
+                      :disabled="!selectedVideoItem"
+                      style="max-width: 420px"
+                      @input="(value) => updateVideoAdjust('brightness', Number(value))"
+                    />
+                  </el-form-item>
+                  <el-form-item label="对比度">
+                    <el-slider
+                      :model-value="selectedVisualAdjust.contrast"
+                      :min="0.5"
+                      :max="2"
+                      :step="0.01"
+                      :disabled="!selectedVideoItem"
+                      style="max-width: 420px"
+                      @input="(value) => updateVideoAdjust('contrast', Number(value))"
+                    />
+                  </el-form-item>
+                  <el-form-item label="饱和度">
+                    <el-slider
+                      :model-value="selectedVisualAdjust.saturation"
+                      :min="0"
+                      :max="3"
+                      :step="0.01"
+                      :disabled="!selectedVideoItem"
+                      style="max-width: 420px"
+                      @input="(value) => updateVideoAdjust('saturation', Number(value))"
+                    />
+                  </el-form-item>
+                  <el-form-item label="淡入(s)">
+                    <el-input-number
+                      :model-value="selectedTransition.fadeInMs / 1000"
+                      :min="0"
+                      :max="5"
+                      :step="0.1"
+                      :disabled="!selectedVideoItem"
+                      @change="(value) => updateVideoTransition('fadeInMs', Number(value ?? 0))"
+                    />
+                  </el-form-item>
+                  <el-form-item label="淡出(s)">
+                    <el-input-number
+                      :model-value="selectedTransition.fadeOutMs / 1000"
+                      :min="0"
+                      :max="5"
+                      :step="0.1"
+                      :disabled="!selectedVideoItem"
+                      @change="(value) => updateVideoTransition('fadeOutMs', Number(value ?? 0))"
+                    />
+                  </el-form-item>
+                  <el-form-item label="跨片段转场">
+                    <el-button size="small" :disabled="!selectedVideoItem" @click="applyTransitionToAllVideos">应用当前淡入淡出到全部视频</el-button>
+                  </el-form-item>
+                </el-form>
+              </el-tab-pane>
+
+              <el-tab-pane label="贴纸素材库（首版）" name="sticker">
+                <div class="export-queue-head">
+                  <strong>贴纸素材库（首版）</strong>
+                </div>
+                <p style="margin: 0 0 10px; color: #5a6473; font-size: 12px">
+                  支持文本贴纸与图形贴纸样式（胶囊/角标/爆点），可单独配置颜色与位置。
+                </p>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px">
+                  <el-button @click="addStickerPreset('like-pill')">LIKE</el-button>
+                  <el-button @click="addStickerPreset('wow-burst')">WOW</el-button>
+                  <el-button @click="addStickerPreset('new-badge')">NEW</el-button>
+                  <el-button @click="addStickerPreset('sale-pill')">SALE</el-button>
+                  <el-button plain @click="addSticker('STICKER')">纯文本</el-button>
+                </div>
+                <el-form label-width="120px" size="small">
+                  <el-form-item label="贴纸文本">
+                    <el-input
+                      :model-value="selectedStickerText"
+                      maxlength="24"
+                      show-word-limit
+                      placeholder="选中贴纸后可编辑"
+                      :disabled="!selectedStickerItem"
+                      style="max-width: 320px"
+                      @input="(value) => updateStickerText(String(value))"
+                    />
+                  </el-form-item>
+                  <el-form-item label="样式">
+                    <el-select
+                      :model-value="selectedStickerStyle.variant"
+                      placeholder="选择样式"
+                      :disabled="!selectedStickerItem"
+                      style="max-width: 220px"
+                      @change="(value) => updateStickerStyle('variant', String(value))"
+                    >
+                      <el-option
+                        v-for="item in stickerVariantOptions"
+                        :key="item.value"
+                        :label="item.label"
+                        :value="item.value"
+                      />
+                    </el-select>
+                  </el-form-item>
+                  <el-form-item label="背景色">
+                    <el-color-picker
+                      :model-value="selectedStickerStyle.bgColor"
+                      :disabled="!selectedStickerItem"
+                      @change="(value) => updateStickerStyle('bgColor', String(value || '#ff4d4f'))"
+                    />
+                  </el-form-item>
+                  <el-form-item label="文字色">
+                    <el-color-picker
+                      :model-value="selectedStickerStyle.textColor"
+                      :disabled="!selectedStickerItem"
+                      @change="(value) => updateStickerStyle('textColor', String(value || '#ffffff'))"
+                    />
+                  </el-form-item>
+                  <el-form-item label="描边色">
+                    <el-color-picker
+                      :model-value="selectedStickerStyle.borderColor"
+                      :disabled="!selectedStickerItem"
+                      @change="(value) => updateStickerStyle('borderColor', String(value || '#ffffff'))"
+                    />
+                  </el-form-item>
+                  <el-form-item label="横向位置">
+                    <el-slider
+                      :model-value="selectedStickerAdjust.xPct"
+                      :min="0"
+                      :max="1"
+                      :step="0.01"
+                      :disabled="!selectedStickerItem"
+                      style="max-width: 420px"
+                      @input="(value) => updateStickerAdjust('xPct', Number(value))"
+                    />
+                  </el-form-item>
+                  <el-form-item label="纵向位置">
+                    <el-slider
+                      :model-value="selectedStickerAdjust.yPct"
+                      :min="0"
+                      :max="1"
+                      :step="0.01"
+                      :disabled="!selectedStickerItem"
+                      style="max-width: 420px"
+                      @input="(value) => updateStickerAdjust('yPct', Number(value))"
+                    />
+                  </el-form-item>
+                  <el-form-item label="缩放">
+                    <el-slider
+                      :model-value="selectedStickerAdjust.scale"
+                      :min="0.5"
+                      :max="3"
+                      :step="0.01"
+                      :disabled="!selectedStickerItem"
+                      style="max-width: 420px"
+                      @input="(value) => updateStickerAdjust('scale', Number(value))"
+                    />
+                  </el-form-item>
+                  <el-form-item label="透明度">
+                    <el-slider
+                      :model-value="selectedStickerAdjust.opacity"
+                      :min="0.1"
+                      :max="1"
+                      :step="0.01"
+                      :disabled="!selectedStickerItem"
+                      style="max-width: 420px"
+                      @input="(value) => updateStickerAdjust('opacity', Number(value))"
+                    />
+                  </el-form-item>
+                </el-form>
+              </el-tab-pane>
+            </el-tabs>
           </div>
         </div>
       </el-tab-pane>

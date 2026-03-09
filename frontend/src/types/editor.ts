@@ -62,6 +62,7 @@ export interface TemplatePreset {
   id: string
   name: string
   description: string
+  source?: 'builtin' | 'custom'
   visualAdjust: Partial<VisualAdjust>
   transition: Partial<TransitionAdjust>
   stickers: TemplateStickerPreset[]
@@ -143,3 +144,4 @@ export interface EditorProjectDraft {
   timeline?: TimelineProject
   subtitleSettings?: SubtitleSettings
 }
+

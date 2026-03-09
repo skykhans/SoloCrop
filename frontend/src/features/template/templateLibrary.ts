@@ -3,8 +3,9 @@ import type { TemplatePreset } from '../../types/editor'
 export const TEMPLATE_PRESETS: TemplatePreset[] = [
   {
     id: 'vlog-fast',
-    name: 'Vlog 快剪',
-    description: '高饱和+轻淡入淡出，搭配开场互动贴纸。',
+    source: 'builtin',
+    name: 'Vlog \u5feb\u526a',
+    description: '\u9ad8\u9971\u548c+\u8f7b\u6de1\u5165\u6de1\u51fa\uff0c\u642d\u914d\u5f00\u573a\u4e92\u52a8\u8d34\u7eb8\u3002',
     visualAdjust: {
       brightness: 0.06,
       contrast: 1.08,
@@ -31,13 +32,14 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
       }
     ],
     subtitles: [
-      { text: '今天带你 30 秒看完重点', startOffsetMs: 300, durationMs: 1600 }
+      { text: '\u4eca\u5929\u5e26\u4f60 30 \u79d2\u770b\u5b8c\u91cd\u70b9', startOffsetMs: 300, durationMs: 1600 }
     ]
   },
   {
     id: 'story-clean',
-    name: '故事讲述',
-    description: '轻对比+更长转场，适合口播和讲解节奏。',
+    source: 'builtin',
+    name: '\u6545\u4e8b\u8bb2\u8ff0',
+    description: '\u8f7b\u5bf9\u6bd4+\u66f4\u957f\u8f6c\u573a\uff0c\u9002\u5408\u53e3\u64ad\u548c\u8bb2\u89e3\u8282\u594f\u3002',
     visualAdjust: {
       brightness: 0.02,
       contrast: 1.04,
@@ -57,14 +59,15 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
       }
     ],
     subtitles: [
-      { text: '核心信息先说结论', startOffsetMs: 500, durationMs: 1800 },
-      { text: '再补充关键细节', startOffsetMs: 2600, durationMs: 1600 }
+      { text: '\u6838\u5fc3\u4fe1\u606f\u5148\u8bf4\u7ed3\u8bba', startOffsetMs: 500, durationMs: 1800 },
+      { text: '\u518d\u8865\u5145\u5173\u952e\u7ec6\u8282', startOffsetMs: 2600, durationMs: 1600 }
     ]
   },
   {
     id: 'sale-promo',
-    name: '促销冲刺',
-    description: '高对比+高饱和，附带促销贴纸与口号字幕。',
+    source: 'builtin',
+    name: '\u4fc3\u9500\u51b2\u523a',
+    description: '\u9ad8\u5bf9\u6bd4+\u9ad8\u9971\u548c\uff0c\u9644\u5e26\u4fc3\u9500\u8d34\u7eb8\u4e0e\u53e3\u53f7\u5b57\u5e55\u3002',
     visualAdjust: {
       brightness: 0.1,
       contrast: 1.18,
@@ -91,8 +94,8 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
       }
     ],
     subtitles: [
-      { text: '限时优惠进行中', startOffsetMs: 300, durationMs: 1200 },
-      { text: '现在下单立减', startOffsetMs: 1900, durationMs: 1300 }
+      { text: '\u9650\u65f6\u4f18\u60e0\u8fdb\u884c\u4e2d', startOffsetMs: 300, durationMs: 1200 },
+      { text: '\u73b0\u5728\u4e0b\u5355\u7acb\u51cf', startOffsetMs: 1900, durationMs: 1300 }
     ]
   }
 ]

@@ -26,25 +26,31 @@ if (-not $changes) {
   exit 0
 }
 
-$requirementFile = Join-Path $root 'docs\需求文档.md'
+$requirementRelativePath = 'docs\' + [string]([char]0x9700) + [char]0x6C42 + [char]0x6587 + [char]0x6863 + '.md'
+$requirementFile = Join-Path $root $requirementRelativePath
 if (-not (Test-Path $requirementFile)) {
-  Write-Error 'docs/需求文档.md 不存在'
+  Write-Error "required document not found: $requirementRelativePath"
   exit 1
 }
 
 $featureCodeChanged = $false
 $requirementDocChanged = $false
 foreach ($line in $changes) {
-  if ($line -match '^frontend/src/(features|stores|views|components)/') {
+  if (
+    $line -like 'frontend/src/features/*' -or
+    $line -like 'frontend/src/stores/*' -or
+    $line -like 'frontend/src/views/*' -or
+    $line -like 'frontend/src/components/*'
+  ) {
     $featureCodeChanged = $true
   }
-  if ($line -eq 'docs/需求文档.md') {
+  if ($line -eq $requirementRelativePath.Replace('\', '/')) {
     $requirementDocChanged = $true
   }
 }
 
 if ($featureCodeChanged -and -not $requirementDocChanged) {
-  Write-Error '检测到功能代码变更，但 docs/需求文档.md 未同步更新'
+  Write-Error 'feature code changed but the requirement document was not updated'
   exit 1
 }
 
@@ -52,19 +58,19 @@ $content = Get-Content -Raw $requirementFile
 $requiredRows = $content -split "`n" | Where-Object { $_ -match '\|\s*是\s*\|' }
 foreach ($row in $requiredRows) {
   if ($row -match '\|\s*(未开始|进行中|可用)\s*\|') {
-    Write-Error "存在本轮必须项未验收: $row"
+    Write-Error "required feature not accepted yet: $row"
     exit 1
   }
   if ($row -match '\|\s*-\s*\|') {
-    Write-Error "存在本轮必须项缺少字段: $row"
+    Write-Error "required feature has missing fields: $row"
     exit 1
   }
   if ($row -notmatch '\|\s*E2E-[A-Z-0-9]+\s*\|') {
-    Write-Error "存在本轮必须项缺少 PlaywrightCaseID: $row"
+    Write-Error "required feature missing PlaywrightCaseID: $row"
     exit 1
   }
   if ($row -notmatch '\|\s*PASS\s*\|') {
-    Write-Error "存在本轮必须项最近验收结果非 PASS: $row"
+    Write-Error "required feature latest result is not PASS: $row"
     exit 1
   }
 }

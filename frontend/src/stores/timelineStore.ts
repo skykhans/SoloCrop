@@ -174,7 +174,7 @@ export const useTimelineStore = defineStore('timeline', {
     updateSelectedVideoAdjust(partial: Partial<TimelineItem['visualAdjust']>) {
       const selected = this.selectedVideoItem
       if (!selected) {
-        throw new Error('请先选中视频轨片段')
+        throw new Error('Please select a video clip first')
       }
       this.pushHistory()
       selected.visualAdjust = {
@@ -188,7 +188,7 @@ export const useTimelineStore = defineStore('timeline', {
     updateSelectedVideoTransition(partial: Partial<TimelineItem['transition']>) {
       const selected = this.selectedVideoItem
       if (!selected) {
-        throw new Error('请先选中视频轨片段')
+        throw new Error('Please select a video clip first')
       }
       this.pushHistory()
       const next = {
@@ -206,7 +206,7 @@ export const useTimelineStore = defineStore('timeline', {
     resetSelectedVideoEffects() {
       const selected = this.selectedVideoItem
       if (!selected) {
-        throw new Error('请先选中视频轨片段')
+        throw new Error('Please select a video clip first')
       }
       this.pushHistory()
       selected.visualAdjust = createDefaultVisualAdjust()
@@ -219,7 +219,7 @@ export const useTimelineStore = defineStore('timeline', {
       this.timeline.items.push({
         id: crypto.randomUUID(),
         trackId: SUBTITLE_TRACK_ID,
-        label: text || '字幕',
+        label: text || '瀛楀箷',
         text,
         startMs,
         endMs,
@@ -262,7 +262,7 @@ export const useTimelineStore = defineStore('timeline', {
     applyTemplatePreset(template: TemplatePreset) {
       const videos = this.videoItems
       if (!videos.length) {
-        throw new Error('请先添加视频到时间轴')
+        throw new Error('璇峰厛娣诲姞瑙嗛鍒版椂闂磋酱')
       }
 
       const baseStartMs = videos[0].startMs
@@ -314,8 +314,8 @@ export const useTimelineStore = defineStore('timeline', {
         this.timeline.items.push({
           id: crypto.randomUUID(),
           trackId: SUBTITLE_TRACK_ID,
-          label: subtitle.text || '字幕',
-          text: subtitle.text || '字幕',
+          label: subtitle.text || '瀛楀箷',
+          text: subtitle.text || '瀛楀箷',
           startMs,
           endMs: startMs + durationMs,
           sourceInMs: 0,
@@ -329,10 +329,45 @@ export const useTimelineStore = defineStore('timeline', {
       this.redoStack = []
     },
 
+    captureTemplatePreset(name: string, description?: string): TemplatePreset {
+      const videos = this.videoItems
+      if (!videos.length) {
+        throw new Error('Please add a video clip first')
+      }
+
+      const baseStartMs = videos[0].startMs
+      const primaryVideo = this.selectedVideoItem ?? videos[0]
+      const safeName = (name || '').trim().slice(0, 24)
+      if (!safeName) {
+        throw new Error('Please enter a template name')
+      }
+
+      return {
+        id: `custom-${crypto.randomUUID()}`,
+        name: safeName,
+        description: (description || '').trim().slice(0, 80) || `Saved from current timeline with ${videos.length} video clip(s)`,
+        source: 'custom',
+        visualAdjust: normalizeVisualAdjust(primaryVideo.visualAdjust),
+        transition: normalizeTransition(primaryVideo.transition),
+        stickers: this.stickerItems.map((item) => ({
+          text: item.text ?? item.label,
+          startOffsetMs: Math.max(0, item.startMs - baseStartMs),
+          durationMs: Math.max(300, item.endMs - item.startMs),
+          adjust: { ...(item.stickerAdjust ?? createDefaultStickerAdjust()) },
+          style: { ...(item.stickerStyle ?? createDefaultStickerStyle()) }
+        })),
+        subtitles: this.subtitleItems.map((item) => ({
+          text: item.text ?? item.label,
+          startOffsetMs: Math.max(0, item.startMs - baseStartMs),
+          durationMs: Math.max(300, item.endMs - item.startMs)
+        }))
+      }
+    },
+
     updateSelectedStickerText(text: string) {
       const selected = this.selectedStickerItem
       if (!selected) {
-        throw new Error('请先选中贴纸片段')
+        throw new Error('璇峰厛閫変腑璐寸焊鐗囨')
       }
       this.pushHistory()
       const safeText = (text || '').trim().slice(0, 24)
@@ -344,7 +379,7 @@ export const useTimelineStore = defineStore('timeline', {
     updateSelectedStickerAdjust(partial: Partial<TimelineItem['stickerAdjust']>) {
       const selected = this.selectedStickerItem
       if (!selected) {
-        throw new Error('请先选中贴纸片段')
+        throw new Error('璇峰厛閫変腑璐寸焊鐗囨')
       }
       this.pushHistory()
       const next = {
@@ -364,7 +399,7 @@ export const useTimelineStore = defineStore('timeline', {
     updateSelectedStickerStyle(partial: Partial<TimelineItem['stickerStyle']>) {
       const selected = this.selectedStickerItem
       if (!selected) {
-        throw new Error('请先选中贴纸片段')
+        throw new Error('璇峰厛閫変腑璐寸焊鐗囨')
       }
       this.pushHistory()
       selected.stickerStyle = normalizeStickerStyle({
@@ -377,7 +412,7 @@ export const useTimelineStore = defineStore('timeline', {
     applySelectedVideoFilterPreset(preset: Partial<TimelineItem['visualAdjust']>) {
       const selected = this.selectedVideoItem
       if (!selected) {
-        throw new Error('请先选中视频轨片段')
+        throw new Error('Please select a video clip first')
       }
       this.pushHistory()
       selected.visualAdjust = {
@@ -391,7 +426,7 @@ export const useTimelineStore = defineStore('timeline', {
     applyTransitionToAllVideos(transition: Partial<TimelineItem['transition']>) {
       const videos = this.videoItems
       if (!videos.length) {
-        throw new Error('请先添加视频到时间轴')
+        throw new Error('璇峰厛娣诲姞瑙嗛鍒版椂闂磋酱')
       }
       this.pushHistory()
       for (const item of videos) {
@@ -436,16 +471,16 @@ export const useTimelineStore = defineStore('timeline', {
     splitSelectedAtPlayhead() {
       const selected = this.selectedItem
       if (!selected) {
-        throw new Error('请先选择时间线片段')
+        throw new Error('Please select a timeline item first')
       }
       const selectedType = getTrackType(this.timeline, selected.trackId)
       if (selectedType === 'subtitle' || selectedType === 'sticker') {
-        throw new Error('当前片段类型暂不支持分割')
+        throw new Error('褰撳墠鐗囨绫诲瀷鏆備笉鏀寔鍒嗗壊')
       }
 
       const splitAt = this.playhead.currentMs
       if (splitAt <= selected.startMs || splitAt >= selected.endMs) {
-        throw new Error('播放头必须在片段范围内')
+        throw new Error('Playhead must be inside the selected clip')
       }
 
       this.pushHistory()
@@ -619,10 +654,10 @@ export const useTimelineStore = defineStore('timeline', {
 export function createDefaultTimeline(): TimelineProject {
   return {
     tracks: [
-      { id: VIDEO_TRACK_ID, type: 'video', name: '视频轨', locked: false, muted: false },
-      { id: AUDIO_TRACK_ID, type: 'audio', name: '音频轨', locked: false, muted: false },
-      { id: SUBTITLE_TRACK_ID, type: 'subtitle', name: '字幕轨', locked: false, muted: false },
-      { id: STICKER_TRACK_ID, type: 'sticker', name: '贴纸轨', locked: false, muted: false }
+      { id: VIDEO_TRACK_ID, type: 'video', name: 'Video Track', locked: false, muted: false },
+      { id: AUDIO_TRACK_ID, type: 'audio', name: 'Audio Track', locked: false, muted: false },
+      { id: SUBTITLE_TRACK_ID, type: 'subtitle', name: 'Subtitle Track', locked: false, muted: false },
+      { id: STICKER_TRACK_ID, type: 'sticker', name: 'Sticker Track', locked: false, muted: false }
     ],
     items: [],
     durationMs: 0,
@@ -758,3 +793,4 @@ function clamp(value: number, min: number, max: number): number {
 function cloneTimeline(value: TimelineProject): TimelineProject {
   return JSON.parse(JSON.stringify(value)) as TimelineProject
 }
+

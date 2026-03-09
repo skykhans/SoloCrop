@@ -6,6 +6,7 @@ test('E2E-STICKER-001 贴纸添加与编辑', async ({ page }) => {
   await goEditor(page)
   await addFirstMediaToTimeline(page)
 
+  await page.getByRole('tab', { name: '贴纸素材库（首版）' }).click()
   await page.getByRole('button', { name: 'LIKE' }).click()
   const stickerRow = page.locator('.timeline-track-row').filter({ hasText: '贴纸轨' })
   await expect(stickerRow.locator('.timeline-item')).toHaveCount(1)

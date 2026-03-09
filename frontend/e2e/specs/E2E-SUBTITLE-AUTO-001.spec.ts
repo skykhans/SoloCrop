@@ -9,5 +9,5 @@ test('E2E-SUBTITLE-AUTO-001 自动字幕生成并可编辑', async ({ page }) =>
   await page.getByRole('tab', { name: '字幕' }).click()
   await page.getByRole('button', { name: '自动字幕（本地ASR）' }).click()
   const subtitlePanel = page.getByRole('tabpanel', { name: '字幕' })
-  await expect(subtitlePanel.locator('input[value^=\"自动字幕片段\"]').first()).toBeVisible({ timeout: 120000 })
+  await expect(subtitlePanel.getByRole('cell', { name: /自动字幕片段 1/ })).toBeVisible({ timeout: 120000 })
 })
