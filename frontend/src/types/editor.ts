@@ -142,6 +142,7 @@ export interface EditorProjectDraft {
   exportMode: ExportMode
   exportBitrate: ExportBitratePreset
   timeline?: TimelineProject
+  subtitleSegments?: SubtitleSegment[]
   subtitleSettings?: SubtitleSettings
 }
 

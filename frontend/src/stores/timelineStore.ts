@@ -7,6 +7,7 @@ import type {
   PlayheadState,
   SelectionRange,
   SnapLine,
+  SubtitleSegment,
   SubtitleSettings,
   TemplatePreset,
   TimelineClip,
@@ -32,6 +33,7 @@ export const useTimelineStore = defineStore('timeline', {
     selection: null as SelectionRange | null,
     undoStack: [] as TimelineProject[],
     redoStack: [] as TimelineProject[],
+    subtitleSegmentsSnapshot: [] as SubtitleSegment[],
     loading: false,
     saving: false
   }),
@@ -83,6 +85,7 @@ export const useTimelineStore = defineStore('timeline', {
       this.selection = null
       this.undoStack = []
       this.redoStack = []
+      this.subtitleSegmentsSnapshot = []
 
       const draft = await db.projectDrafts.get(projectId)
       if (draft) {
@@ -102,6 +105,9 @@ export const useTimelineStore = defineStore('timeline', {
       }
       this.playhead.currentMs = Math.max(0, Math.floor((draft.playheadSec ?? 0) * 1000))
       this.selectedItemId = draft.selectedClipId ?? this.timeline.items[0]?.id ?? null
+      this.subtitleSegmentsSnapshot = Array.isArray(draft.subtitleSegments)
+        ? draft.subtitleSegments.slice().sort((a, b) => a.startMs - b.startMs)
+        : []
       this.recalculateDuration()
       this.undoStack = []
       this.redoStack = []
@@ -111,11 +117,15 @@ export const useTimelineStore = defineStore('timeline', {
       exportPreset?: EditorProjectDraft['exportPreset']
       exportMode?: EditorProjectDraft['exportMode']
       exportBitrate?: EditorProjectDraft['exportBitrate']
+      subtitleSegments?: SubtitleSegment[]
       subtitleSettings?: SubtitleSettings
     }) {
       this.saving = true
       this.recalculateDuration()
       const legacyClips = this.toLegacyClips()
+      this.subtitleSegmentsSnapshot = Array.isArray(extra?.subtitleSegments)
+        ? extra.subtitleSegments.slice().sort((a, b) => a.startMs - b.startMs)
+        : this.subtitleSegmentsSnapshot
       const payload: EditorProjectDraft = {
         projectId: this.projectId,
         clips: legacyClips,
@@ -125,6 +135,7 @@ export const useTimelineStore = defineStore('timeline', {
         exportMode: extra?.exportMode ?? 'final',
         exportBitrate: extra?.exportBitrate ?? 'auto',
         timeline: this.timeline,
+        subtitleSegments: this.subtitleSegmentsSnapshot,
         subtitleSettings: extra?.subtitleSettings ?? { model: 'tiny', language: 'zh' }
       }
 
@@ -219,7 +230,7 @@ export const useTimelineStore = defineStore('timeline', {
       this.timeline.items.push({
         id: crypto.randomUUID(),
         trackId: SUBTITLE_TRACK_ID,
-        label: text || '瀛楀箷',
+        label: text || '字幕',
         text,
         startMs,
         endMs,
@@ -262,7 +273,7 @@ export const useTimelineStore = defineStore('timeline', {
     applyTemplatePreset(template: TemplatePreset) {
       const videos = this.videoItems
       if (!videos.length) {
-        throw new Error('璇峰厛娣诲姞瑙嗛鍒版椂闂磋酱')
+        throw new Error('请先添加视频到时间轴')
       }
 
       const baseStartMs = videos[0].startMs
@@ -314,8 +325,8 @@ export const useTimelineStore = defineStore('timeline', {
         this.timeline.items.push({
           id: crypto.randomUUID(),
           trackId: SUBTITLE_TRACK_ID,
-          label: subtitle.text || '瀛楀箷',
-          text: subtitle.text || '瀛楀箷',
+          label: subtitle.text || '字幕',
+          text: subtitle.text || '字幕',
           startMs,
           endMs: startMs + durationMs,
           sourceInMs: 0,
@@ -364,10 +375,52 @@ export const useTimelineStore = defineStore('timeline', {
       }
     },
 
+    syncSubtitlesFromSegments(segments: SubtitleSegment[], recordHistory = true) {
+      if (recordHistory) {
+        this.pushHistory()
+      }
+      const subtitleItems = (Array.isArray(segments) ? segments : [])
+        .slice()
+        .sort((a, b) => a.startMs - b.startMs)
+        .map<TimelineItem>((segment) => ({
+          id: segment.id,
+          trackId: SUBTITLE_TRACK_ID,
+          label: segment.text || '字幕',
+          text: segment.text || '字幕',
+          startMs: Math.max(0, Math.floor(segment.startMs)),
+          endMs: Math.max(Math.floor(segment.startMs) + 100, Math.floor(segment.endMs)),
+          sourceInMs: 0,
+          sourceOutMs: Math.max(100, Math.floor(segment.endMs) - Math.floor(segment.startMs)),
+          color: segment.enabled ? '#f6b24f' : '#c8ced8'
+        }))
+
+      this.timeline.items = this.timeline.items
+        .filter((item) => item.trackId !== SUBTITLE_TRACK_ID)
+        .concat(subtitleItems)
+      this.subtitleSegmentsSnapshot = (Array.isArray(segments) ? segments : [])
+        .slice()
+        .sort((a, b) => a.startMs - b.startMs)
+      this.recalculateDuration()
+      if (recordHistory) {
+        this.redoStack = []
+      }
+    },
+
+    toSubtitleSegments(): SubtitleSegment[] {
+      return this.subtitleItems.map((item) => ({
+        id: item.id,
+        startMs: item.startMs,
+        endMs: item.endMs,
+        text: item.text ?? item.label,
+        confidence: 1,
+        enabled: item.color !== '#c8ced8'
+      }))
+    },
+
     updateSelectedStickerText(text: string) {
       const selected = this.selectedStickerItem
       if (!selected) {
-        throw new Error('璇峰厛閫変腑璐寸焊鐗囨')
+        throw new Error('请先选中贴纸片段')
       }
       this.pushHistory()
       const safeText = (text || '').trim().slice(0, 24)
@@ -379,7 +432,7 @@ export const useTimelineStore = defineStore('timeline', {
     updateSelectedStickerAdjust(partial: Partial<TimelineItem['stickerAdjust']>) {
       const selected = this.selectedStickerItem
       if (!selected) {
-        throw new Error('璇峰厛閫変腑璐寸焊鐗囨')
+        throw new Error('请先选中贴纸片段')
       }
       this.pushHistory()
       const next = {
@@ -399,7 +452,7 @@ export const useTimelineStore = defineStore('timeline', {
     updateSelectedStickerStyle(partial: Partial<TimelineItem['stickerStyle']>) {
       const selected = this.selectedStickerItem
       if (!selected) {
-        throw new Error('璇峰厛閫変腑璐寸焊鐗囨')
+        throw new Error('请先选中贴纸片段')
       }
       this.pushHistory()
       selected.stickerStyle = normalizeStickerStyle({
@@ -426,7 +479,7 @@ export const useTimelineStore = defineStore('timeline', {
     applyTransitionToAllVideos(transition: Partial<TimelineItem['transition']>) {
       const videos = this.videoItems
       if (!videos.length) {
-        throw new Error('璇峰厛娣诲姞瑙嗛鍒版椂闂磋酱')
+        throw new Error('请先添加视频到时间轴')
       }
       this.pushHistory()
       for (const item of videos) {
@@ -475,7 +528,7 @@ export const useTimelineStore = defineStore('timeline', {
       }
       const selectedType = getTrackType(this.timeline, selected.trackId)
       if (selectedType === 'subtitle' || selectedType === 'sticker') {
-        throw new Error('褰撳墠鐗囨绫诲瀷鏆備笉鏀寔鍒嗗壊')
+        throw new Error('当前片段类型暂不支持分割')
       }
 
       const splitAt = this.playhead.currentMs
@@ -654,10 +707,10 @@ export const useTimelineStore = defineStore('timeline', {
 export function createDefaultTimeline(): TimelineProject {
   return {
     tracks: [
-      { id: VIDEO_TRACK_ID, type: 'video', name: 'Video Track', locked: false, muted: false },
-      { id: AUDIO_TRACK_ID, type: 'audio', name: 'Audio Track', locked: false, muted: false },
-      { id: SUBTITLE_TRACK_ID, type: 'subtitle', name: 'Subtitle Track', locked: false, muted: false },
-      { id: STICKER_TRACK_ID, type: 'sticker', name: 'Sticker Track', locked: false, muted: false }
+      { id: VIDEO_TRACK_ID, type: 'video', name: '视频轨', locked: false, muted: false },
+      { id: AUDIO_TRACK_ID, type: 'audio', name: '音频轨', locked: false, muted: false },
+      { id: SUBTITLE_TRACK_ID, type: 'subtitle', name: '字幕轨', locked: false, muted: false },
+      { id: STICKER_TRACK_ID, type: 'sticker', name: '贴纸轨', locked: false, muted: false }
     ],
     items: [],
     durationMs: 0,

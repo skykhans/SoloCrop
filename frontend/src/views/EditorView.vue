@@ -22,7 +22,7 @@ import { STICKER_LIBRARY } from '../features/editor/stickerLibrary'
 import { downloadBatch } from '../features/split/download'
 import { deleteCustomTemplate, loadCustomTemplates, saveCustomTemplate } from '../features/template/customTemplateStorage'
 import { resolveTemplatePreset, TEMPLATE_PRESETS } from '../features/template/templateLibrary'
-import type { ExportBitratePreset, ExportMode, ExportPreset, StickerVariant, TemplatePreset, TimelineClip } from '../types/editor'
+import type { ExportBitratePreset, ExportMode, ExportPreset, StickerVariant, SubtitleSegment, TemplatePreset, TimelineClip } from '../types/editor'
 
 interface ExportTaskItem {
   id: string
@@ -93,6 +93,7 @@ onMounted(async () => {
       // ignore
     }
   }
+  hydrateSubtitlesFromDraft()
 })
 
 const templateOptions = computed(() => [...TEMPLATE_PRESETS, ...customTemplates.value])
@@ -209,12 +210,33 @@ function addSelectedMediaToTimeline() {
   }
 }
 
+function syncSubtitleStoreFromTimeline() {
+  subtitleStore.loadFromSegments(timelineStore.toSubtitleSegments())
+}
+
 function handleTrackMove(itemId: string, startMs: number) {
   timelineStore.moveItem(itemId, startMs)
+  const moved = timelineStore.items.find((item) => item.id === itemId)
+  if (moved && moved.trackId === 'subtitle-main') {
+    syncSubtitleStoreFromTimeline()
+  }
 }
 
 function handleTrackTrim(itemId: string, edge: 'start' | 'end', ms: number) {
   timelineStore.trimItem(itemId, edge, ms)
+  const trimmed = timelineStore.items.find((item) => item.id === itemId)
+  if (trimmed && trimmed.trackId === 'subtitle-main') {
+    syncSubtitleStoreFromTimeline()
+  }
+}
+
+function handleTrackCreate(trackId: string, startMs: number) {
+  if (trackId !== 'subtitle-main') {
+    return
+  }
+  subtitleStore.addSegment(startMs, startMs + 2000, '新字幕')
+  syncSubtitleTimeline()
+  ElMessage.success('已在字幕轨创建字幕段')
 }
 
 function togglePlay() {
@@ -226,9 +248,33 @@ async function saveProject() {
     exportPreset: editorStore.exportPreset,
     exportMode: editorStore.exportMode,
     exportBitrate: editorStore.exportBitrate,
+    subtitleSegments: subtitleStore.segments,
     subtitleSettings: subtitleStore.settings
   })
   ElMessage.success('工程已保存')
+}
+
+function fallbackSubtitleSegments(): SubtitleSegment[] {
+  return timelineStore.subtitleItems.map((item) => ({
+    id: item.id,
+    startMs: item.startMs,
+    endMs: item.endMs,
+    text: item.text ?? item.label,
+    confidence: 1,
+    enabled: true
+  }))
+}
+
+function syncSubtitleTimeline() {
+  timelineStore.syncSubtitlesFromSegments(subtitleStore.segments)
+}
+
+function hydrateSubtitlesFromDraft() {
+  const segments = timelineStore.subtitleSegmentsSnapshot.length
+    ? timelineStore.subtitleSegmentsSnapshot
+    : fallbackSubtitleSegments()
+  subtitleStore.loadFromSegments(segments)
+  timelineStore.syncSubtitlesFromSegments(segments, false)
 }
 
 async function runAutoSubtitle() {
@@ -244,9 +290,7 @@ async function runAutoSubtitle() {
   }
   try {
     await subtitleStore.runAutoSubtitle(media.file)
-    for (const segment of subtitleStore.segments) {
-      timelineStore.addSubtitle(segment.startMs, segment.endMs, segment.text)
-    }
+    syncSubtitleTimeline()
     ElMessage.success('自动字幕生成完成（本地ASR）')
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '自动字幕失败')
@@ -255,7 +299,27 @@ async function runAutoSubtitle() {
 
 function applySubtitleOffset() {
   subtitleStore.offsetAll(Math.floor(subtitleOffsetSec.value * 1000))
+  syncSubtitleTimeline()
   ElMessage.success('字幕偏移已应用')
+}
+
+function addSubtitleSegment() {
+  const startMs = timelineStore.playhead.currentMs
+  subtitleStore.addSegment(startMs, startMs + 2000, '新字幕')
+  syncSubtitleTimeline()
+  ElMessage.success('已新增字幕段')
+}
+
+function duplicateSubtitleSegment(id: string) {
+  subtitleStore.duplicateSegment(id)
+  syncSubtitleTimeline()
+  ElMessage.success('已复制字幕段')
+}
+
+function removeSubtitleSegment(id: string) {
+  subtitleStore.removeSegment(id)
+  syncSubtitleTimeline()
+  ElMessage.success('已删除字幕段')
 }
 
 async function enqueueFinalExport() {
@@ -548,6 +612,7 @@ function applyTemplate() {
   }
   try {
     timelineStore.applyTemplatePreset(template)
+    syncSubtitleStoreFromTimeline()
     ElMessage.success(`Template applied: ${template.name}`)
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : 'Applying template failed')
@@ -587,7 +652,7 @@ function applyTemplate() {
           <div class="timeline-toolbar">
             <el-button @click="togglePlay">{{ timelineStore.playhead.playing ? '暂停' : '播放' }}</el-button>
             <el-button @click="timelineStore.splitSelectedAtPlayhead">按播放头分割</el-button>
-            <el-button @click="timelineStore.deleteSelected">删除选中</el-button>
+            <el-button @click="() => { timelineStore.deleteSelected(); syncSubtitleStoreFromTimeline() }">删除选中</el-button>
             <el-button @click="timelineStore.undo">撤销</el-button>
             <el-button @click="timelineStore.redo">重做</el-button>
             <span style="color: #5a6473">播放头：{{ fmtMs(timelineStore.playhead.currentMs) }}</span>
@@ -618,6 +683,7 @@ function applyTemplate() {
               @select="(itemId) => timelineStore.selectItem(itemId)"
               @move="handleTrackMove"
               @trim="handleTrackTrim"
+              @create="handleTrackCreate"
             />
           </div>
 
@@ -878,12 +944,15 @@ function applyTemplate() {
           <span style="color: #5a6473">整体偏移(s)</span>
           <el-input-number v-model="subtitleOffsetSec" :step="0.1" />
           <el-button @click="applySubtitleOffset">应用偏移</el-button>
+          <el-button plain @click="addSubtitleSegment">新增字幕段</el-button>
         </div>
         <SubtitleTrack
           :segments="subtitleStore.segments"
-          @update-text="(id, text) => subtitleStore.updateSegmentText(id, text)"
-          @update-range="(id, startMs, endMs) => subtitleStore.updateSegmentRange(id, startMs, endMs)"
-          @toggle="(id, enabled) => subtitleStore.setSegmentEnabled(id, enabled)"
+          @update-text="(id, text) => { subtitleStore.updateSegmentText(id, text); syncSubtitleTimeline() }"
+          @update-range="(id, startMs, endMs) => { subtitleStore.updateSegmentRange(id, startMs, endMs); syncSubtitleTimeline() }"
+          @toggle="(id, enabled) => { subtitleStore.setSegmentEnabled(id, enabled); syncSubtitleTimeline() }"
+          @duplicate="duplicateSubtitleSegment"
+          @remove="removeSubtitleSegment"
         />
       </el-tab-pane>
 

@@ -63,4 +63,18 @@ describe('timeline migration', () => {
     expect(template.subtitles).toHaveLength(1)
     expect(template.subtitles[0]).toMatchObject({ text: 'Hello world', startOffsetMs: 700, durationMs: 1100 })
   })
+
+  it('syncs subtitle segments into the subtitle track and snapshot', () => {
+    const store = useTimelineStore()
+    store.syncSubtitlesFromSegments([
+      { id: 's1', startMs: 100, endMs: 800, text: '第一条', confidence: 0.9, enabled: true },
+      { id: 's2', startMs: 900, endMs: 1500, text: '第二条', confidence: 0.8, enabled: false }
+    ])
+
+    expect(store.subtitleItems).toHaveLength(2)
+    expect(store.subtitleItems[0]).toMatchObject({ id: 's1', text: '第一条', startMs: 100, endMs: 800, color: '#f6b24f' })
+    expect(store.subtitleItems[1]).toMatchObject({ id: 's2', text: '第二条', startMs: 900, endMs: 1500, color: '#c8ced8' })
+    expect(store.subtitleSegmentsSnapshot).toHaveLength(2)
+    expect(store.timeline.durationMs).toBe(1500)
+  })
 })

@@ -10,6 +10,8 @@ const emit = defineEmits<{
   updateText: [id: string, text: string]
   updateRange: [id: string, startMs: number, endMs: number]
   toggle: [id: string, enabled: boolean]
+  duplicate: [id: string]
+  remove: [id: string]
 }>()
 
 const rows = computed(() => props.segments.slice().sort((a, b) => a.startMs - b.startMs))
@@ -60,6 +62,14 @@ function toSec(ms: number): number {
       </el-table-column>
       <el-table-column label="置信度" width="90">
         <template #default="scope">{{ scope.row.confidence.toFixed(2) }}</template>
+      </el-table-column>
+      <el-table-column label="操作" width="120">
+        <template #default="scope">
+          <div style="display: flex; gap: 6px">
+            <el-button text size="small" @click="emit('duplicate', scope.row.id)">复制</el-button>
+            <el-button text size="small" type="danger" @click="emit('remove', scope.row.id)">删除</el-button>
+          </div>
+        </template>
       </el-table-column>
     </el-table>
   </div>

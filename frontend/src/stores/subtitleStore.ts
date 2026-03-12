@@ -24,6 +24,34 @@ export const useSubtitleStore = defineStore('subtitle', {
       this.segments = Array.isArray(value) ? value.slice().sort((a, b) => a.startMs - b.startMs) : []
     },
 
+    addSegment(startMs = 0, endMs = 2000, text = '新字幕') {
+      const safeStart = Math.max(0, Math.floor(startMs))
+      const safeEnd = Math.max(safeStart + 100, Math.floor(endMs))
+      this.segments = this.segments
+        .concat({
+          id: crypto.randomUUID(),
+          startMs: safeStart,
+          endMs: safeEnd,
+          text,
+          confidence: 1,
+          enabled: true
+        })
+        .sort((a, b) => a.startMs - b.startMs)
+    },
+
+    duplicateSegment(id: string) {
+      const item = this.segments.find((segment) => segment.id === id)
+      if (!item) {
+        return
+      }
+      const duration = Math.max(100, item.endMs - item.startMs)
+      this.addSegment(item.endMs, item.endMs + duration, item.text)
+    },
+
+    removeSegment(id: string) {
+      this.segments = this.segments.filter((segment) => segment.id !== id)
+    },
+
     async runAutoSubtitle(file: File) {
       this.running = true
       this.progress = 0
